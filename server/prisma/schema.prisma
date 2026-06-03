@@ -1,0 +1,260 @@
+// ─────────────────────────────────────────────────────────────
+// REALITY WEB ECOSYSTEM — CORRECTED PHASE 1 SCHEMA
+// ─────────────────────────────────────────────────────────────
+// SECURITY: Tokens encrypted via AES-256-GCM in service layer
+// RELATIONS: All reverse relations explicitly declared
+// AUDIT: All mutation tables carry updatedAt timestamps
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTHENTICATION & SESSION ─────────────────────────────────
+
+model DiscordAccount {
+  id            String   @id                    // Discord snowflake
+  accessToken   String                         // AES-256-GCM encrypted
+  refreshToken  String?                        // AES-256-GCM encrypted
+  expiresAt     DateTime?
+  citizenid     String?  @unique               // FK into qb-core players.steam/citizenid
+  discordRoles  String?                        // JSON array of Discord role IDs
+  lastLogin     DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  rbacUser      RbacUser?
+}
+
+// ─── ROLE-BASED ACCESS CONTROL ────────────────────────────────
+
+model RbacUser {
+  id             Int      @id @default(autoincrement())
+  discordId      String   @unique
+  discordAccount DiscordAccount @relation(fields: [discordId], references: [id], onDelete: Cascade)
+  role           Role     @default(CITIZEN)
+  permissions    String?  @default("[]")        // JSON override array
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
+
+enum Role {
+  OWNER
+  HIGH_MANAGEMENT
+  DEV_DIRECTOR
+  DIRECTOR
+  ORGANIZER
+  STAFF
+  CITIZEN
+}
+
+// ─── HIGH-MANAGEMENT ENCRYPTED LEDGER ────────────────────────
+
+model ManagementLedger {
+  id          Int      @id @default(autoincrement())
+  authorId    String   @map("author_discord_id")
+  title       String
+  content     String                        // Encrypted markdown (AES-256-GCM)
+  signature   String                        // Cryptographic signature (Ed25519)
+  isEncrypted Boolean  @default(true)
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("management_ledger")
+}
+
+// ─── EXECUTIVE VOTING ENGINE ─────────────────────────────────
+
+model ExecutiveVote {
+  id          Int          @id @default(autoincrement())
+  title       String
+  description String
+  options     String                        // JSON array of option strings
+  status      VoteStatus   @default(OPEN)
+  createdBy   String       @map("created_by_discord_id")
+  signature   String                        // Cryptographic commitment
+  opensAt     DateTime
+  closesAt    DateTime
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  records     VoteRecord[]                  // ← FIXED: reverse relation added
+
+  @@map("executive_vote")
+}
+
+enum VoteStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+model VoteRecord {
+  id        Int          @id @default(autoincrement())
+  voteId    Int
+  voterId   String       @map("voter_discord_id")
+  option    Int
+  signature String                        // Signed receipt
+  castAt    DateTime     @default(now())
+
+  vote      ExecutiveVote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+
+  @@unique([voteId, voterId])
+  @@map("vote_record")
+}
+
+// ─── AUTOMATED WHITELIST TESTING ─────────────────────────────
+
+model WhitelistTest {
+  id            Int         @id @default(autoincrement())
+  citizenid     String
+  discordId     String
+  status        TestStatus  @default(PENDING)
+  score         Int?
+  passedAt      DateTime?
+  cooldownUntil DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("whitelist_test")
+}
+
+enum TestStatus {
+  PENDING
+  PASSED
+  FAILED
+}
+
+model WhitelistQuestion {
+  id           Int      @id @default(autoincrement())
+  question     String
+  options      String                        // JSON array
+  correctIndex Int
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("whitelist_question")
+}
+
+// ─── POLICE MDT ──────────────────────────────────────────────
+
+model IncidentReport {
+  id               String       @id @default(cuid())
+  officerId        String       @map("officer_discord_id")
+  officerName      String?
+  citizenid        String?
+  citizenName      String?
+  plate            String?
+  title            String
+  description      String
+  charges          String?                         // JSON array
+  evidenceUrls     String?                         // JSON array
+  involvedParties  String?                         // JSON array
+  status           ReportStatus @default(OPEN)
+  warrantIssued    Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@map("incident_report")
+}
+
+enum ReportStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+model Warrant {
+  id           String        @id @default(cuid())
+  citizenid    String
+  citizenName  String?
+  plate        String?
+  issuedBy     String        @map("issued_by_discord_id")
+  issuedByName String?
+  reason       String
+  status       WarrantStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  expiresAt    DateTime?
+  updatedAt    DateTime      @updatedAt
+
+  @@map("reality_warrant")
+}
+
+enum WarrantStatus {
+  ACTIVE
+  EXECUTED
+  REVOKED
+}
+
+// ─── BAN APPEAL PIPELINE ────────────────────────────────────
+
+model BanAppeal {
+  id          Int           @id @default(autoincrement())
+  citizenid   String
+  discordId   String
+  banReason   String
+  banAdmin    String
+  banDuration String
+  videoUrl    String                           // Forced evidence URL
+  statement   String
+  status      AppealStatus  @default(PENDING)
+  reviewedBy  String?       @map("reviewed_by_discord_id")
+  reviewedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("ban_appeal")
+}
+
+enum AppealStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  DENIED
+}
+
+// ─── WEB VEHICLE MARKETPLACE ────────────────────────────────
+// Tracks vehicles listed for sale on the web portal.
+// Ownership transfers use atomic DB transactions.
+
+model VehicleListing {
+  id          Int           @id @default(autoincrement())
+  citizenid   String
+  plate       String        @unique
+  vehicle     String
+  price       Int
+  status      ListingStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("reality_vehicle_listings")
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+}
+
+// ─── ECONOMY PROPERTY CACHE ─────────────────────────────────
+// Cached snapshot of in-game properties for the web map.
+
+model EconomyProperty {
+  id          Int      @id @default(autoincrement())
+  label       String
+  type        String                        // house / business / shop
+  price       Int
+  ownerCitizenid String?                    // null if unowned
+  ownerName   String?
+  position    String                        // JSON: {x, y, z}
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("reality_economy_properties")
+}
