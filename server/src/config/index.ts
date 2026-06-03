@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import { resolve, existsSync } from 'path';
+import { resolve } from 'path';
+import { existsSync } from 'fs';
 
 // Railway injects env vars directly — skip local .env files
 if (!process.env.RAILWAY_SERVICE_ID) {

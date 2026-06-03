@@ -1,0 +1,13 @@
+{
+  "name": "reality-web-ecosystem",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "cd server && npm install && npx prisma generate && npx tsc",
+    "build:client": "cd client && npm install && npx next build",
+    "start": "node server/dist/main.js",
+    "db:push": "cd server && npx prisma db push",
+    "db:seed": "cd server && npx tsx prisma/seed.ts"
+  }
+}

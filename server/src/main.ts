@@ -2,6 +2,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { join } from 'path';
+import { existsSync } from 'fs';
 import { config } from './config';
 import { corsOptions } from './config/cors';
 import authRoutes from './modules/auth/auth.routes';
@@ -87,6 +89,22 @@ app.use('/api/garage', garageRoutes);
 app.use('/api/economy', economyRoutes);
 app.use('/api/mdt', mdtRoutes);
 app.use('/api/appeal', appealRoutes);
+
+// ─── Serve Static Client (Next.js static export) ──────────
+const clientOut = join(process.cwd(), 'client', 'out');
+if (existsSync(clientOut)) {
+  app.use(express.static(clientOut, {
+    extensions: ['html'],
+    index: 'index.html',
+  }));
+
+  // SPA fallback: serve index.html for all non-API routes
+  app.get(/^\/(?!api\/).*/, (_req: Request, res: Response) => {
+    res.sendFile(join(clientOut, 'index.html'));
+  });
+} else {
+  console.log('[Server] Client static build not found — API only');
+}
 
 // ─── 404 Handler ─────────────────────────────────────────────
 
